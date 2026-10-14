@@ -271,7 +271,7 @@ extension ARController {
 // MARK: - 身体骨骼 (Vision 2D 关键点 + 深度反投影到 3D)
 extension ARController {
     func updateBody(from observation: VNHumanBodyPoseObservation, camera: ARCamera, sceneDepth: ARDepthData?) {
-        guard let joints = try? observation.recognizedPoints(VNHumanBodyPoseObservation.JointName.all) else { clearBody(); return }
+        guard let joints = try? observation.recognizedPoints(VNHumanBodyPoseObservation.JointName.allCases) else { clearBody(); return }
         guard !joints.isEmpty else { clearBody(); return }
 
         // 把 2D 归一化关键点反投影到 AR 世界 3D
@@ -362,7 +362,7 @@ extension ARController {
 // MARK: - 手部 (21 点 / 手, Vision 2D + 深度反投影)
 extension ARController {
     func updateHand(from observation: VNHumanHandPoseObservation, isLeft: Bool, camera: ARCamera, sceneDepth: ARDepthData?) {
-        guard let joints = try? observation.recognizedPoints(VNHumanHandPoseObservation.JointName.all) else { clearHand(isLeft: isLeft); return }
+        guard let joints = try? observation.recognizedPoints(VNHumanHandPoseObservation.JointName.allCases) else { clearHand(isLeft: isLeft); return }
         guard !joints.isEmpty else { clearHand(isLeft: isLeft); return }
 
         var worldPoints: [Int: SIMD3<Float>] = [:]
@@ -386,18 +386,18 @@ extension ARController {
             }
         }
 
-        // 手部拓扑对
-        let pairs: [(VNHumanHandPoseObservation.JointName, VNHumanHandPoseObservation.JointName)] = [
-            (.wrist, .thumbCMC), (.thumbCMC, .thumbMCP), (.thumbMCP, .thumbIP), (.thumbIP, .thumbTip),
-            (.wrist, .indexMCP), (.indexMCP, .indexPIP), (.indexPIP, .indexDIP), (.indexDIP, .indexTip),
-            (.wrist, .middleMCP), (.middleMCP, .middlePIP), (.middlePIP, .middleDIP), (.middleDIP, .middleTip),
-            (.wrist, .ringMCP), (.ringMCP, .ringPIP), (.ringPIP, .ringDIP), (.ringDIP, .ringTip),
-            (.wrist, .littleMCP), (.littleMCP, .littlePIP), (.littlePIP, .littleDIP), (.littleDIP, .littleTip),
-            (.indexMCP, .middleMCP), (.middleMCP, .ringMCP), (.ringMCP, .littleMCP),
+        // 手部拓扑对 (用 rawValue 整数: 0 wrist, 1-4 thumb, 5-8 index, 9-12 middle, 13-16 ring, 17-20 little)
+        let pairs: [(Int, Int)] = [
+            (0,1),(1,2),(2,3),(3,4),
+            (0,5),(5,6),(6,7),(7,8),
+            (0,9),(9,10),(10,11),(11,12),
+            (0,13),(13,14),(14,15),(15,16),
+            (0,17),(17,18),(18,19),(19,20),
+            (5,9),(9,13),(13,17),
         ]
         for (a, b) in pairs {
-            guard let pa = worldPoints[a.rawValue],
-                  let pb = worldPoints[b.rawValue] else { continue }
+            guard let pa = worldPoints[a],
+                  let pb = worldPoints[b] else { continue }
             let edge = makeLine(from: pa, to: pb, color: color, thickness: 0.004)
             anchor.addChild(edge)
             handEdges.append(edge)
