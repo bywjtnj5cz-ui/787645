@@ -17,10 +17,32 @@ struct ARWorldApp: App {
 struct ContentView: View {
     @StateObject private var ar = ARController.shared
     @State private var showMenu = false
-    @State private var bodyOn = true
-    @State private var handsOn = true
-    @State private var faceOn = true
-    @State private var gridOn = true
+
+    // 自定义 Binding: 双向连接 @Published 和视图
+    private var bodyOn: Binding<Bool> {
+        Binding(
+            get: { ar.isBodyEnabled },
+            set: { ar.isBodyEnabled = $0 }
+        )
+    }
+    private var handsOn: Binding<Bool> {
+        Binding(
+            get: { ar.isHandsEnabled },
+            set: { ar.isHandsEnabled = $0 }
+        )
+    }
+    private var faceOn: Binding<Bool> {
+        Binding(
+            get: { ar.isFaceEnabled },
+            set: { ar.isFaceEnabled = $0 }
+        )
+    }
+    private var gridOn: Binding<Bool> {
+        Binding(
+            get: { ar.isGridEnabled },
+            set: { ar.isGridEnabled = $0 }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -29,7 +51,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             // HUD 覆盖层
-            HUDOverlay(ar: ar, bodyOn: $bodyOn, handsOn: $handsOn, faceOn: $faceOn, gridOn: $gridOn)
+            HUDOverlay(ar: ar, bodyOn: bodyOn, handsOn: handsOn, faceOn: faceOn, gridOn: gridOn)
 
             // 菜单按钮
             VStack {
@@ -52,14 +74,9 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showMenu) {
-            MenuPanel(ar: ar, bodyOn: $bodyOn, handsOn: $handsOn, faceOn: $faceOn, gridOn: $gridOn)
+            MenuPanel(ar: ar, bodyOn: bodyOn, handsOn: handsOn, faceOn: faceOn, gridOn: gridOn)
                 .applyDetents()
         }
-        // iOS 15 兼容: 双参数闭包 (old, new)
-        .onChange(of: bodyOn) { _, newValue in ar.isBodyEnabled = newValue }
-        .onChange(of: handsOn) { _, newValue in ar.isHandsEnabled = newValue }
-        .onChange(of: faceOn) { _, newValue in ar.isFaceEnabled = newValue }
-        .onChange(of: gridOn) { _, newValue in ar.isGridEnabled = newValue }
         .task {
             ar.start()
         }
