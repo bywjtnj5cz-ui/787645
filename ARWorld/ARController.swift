@@ -46,6 +46,9 @@ final class ARController: NSObject, ObservableObject {
     private var lastVisionFrame: CFTimeInterval = 0
 
     private override init() {
+        // Swift 6 / strict concurrency: super.init() 必须在所有 stored properties 初始化之后
+        arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
+        arSession = ARSession()
         super.init()
         let config = ARWorldTrackingConfiguration()
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
@@ -55,8 +58,6 @@ final class ARController: NSObject, ObservableObject {
             config.frameSemantics.insert(.smoothedSceneDepth)
         }
         config.environmentTexturing = .automatic
-        arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
-        arSession = ARSession()
         arView.session = arSession
         arSession.delegate = self
         arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
