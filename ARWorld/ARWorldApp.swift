@@ -15,7 +15,6 @@ struct ARWorldApp: App {
 
 // MARK: - ContentView (SwiftUI 主界面)
 struct ContentView: View {
-    // AR 状态(由 ARController 驱动,SwiftUI 观察)
     @StateObject private var ar = ARController.shared
     @State private var showMenu = false
     @State private var bodyOn = true
@@ -56,10 +55,11 @@ struct ContentView: View {
             MenuPanel(ar: ar, bodyOn: $bodyOn, handsOn: $handsOn, faceOn: $faceOn, gridOn: $gridOn)
                 .applyDetents()
         }
-        .onChange(of: bodyOn) { newValue in ar.isBodyEnabled = newValue }
-        .onChange(of: handsOn) { newValue in ar.isHandsEnabled = newValue }
-        .onChange(of: faceOn) { newValue in ar.isFaceEnabled = newValue }
-        .onChange(of: gridOn) { newValue in ar.isGridEnabled = newValue }
+        // iOS 15 兼容: 双参数闭包 (old, new)
+        .onChange(of: bodyOn) { _, newValue in ar.isBodyEnabled = newValue }
+        .onChange(of: handsOn) { _, newValue in ar.isHandsEnabled = newValue }
+        .onChange(of: faceOn) { _, newValue in ar.isFaceEnabled = newValue }
+        .onChange(of: gridOn) { _, newValue in ar.isGridEnabled = newValue }
         .task {
             ar.start()
         }

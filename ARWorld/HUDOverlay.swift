@@ -140,7 +140,7 @@ struct HUDOverlay: View {
     }
 }
 
-// MARK: - 简易罗盘 HUD (需要 heading 数据源, 这里用 trackingState 占位)
+// MARK: - 简易罗盘 HUD
 struct CompassHUD: View {
     let trackingState: String
 
@@ -179,7 +179,6 @@ struct MenuPanel: View {
                 Section("WORLD") {
                     Toggle("Ground Grid", isOn: $gridOn)
                     Button("Reset AR Tracking") {
-                        // 重建 session
                         let config = ARWorldTrackingConfiguration()
                         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
                             config.frameSemantics.insert(.sceneDepth)

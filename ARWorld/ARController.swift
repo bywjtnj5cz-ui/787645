@@ -36,15 +36,16 @@ final class ARController: NSObject, ObservableObject {
     private let gridAnchor = AnchorEntity()
     private var gridEntities: [Entity] = []
 
-    // 关节球缓存
-    private var bodyJoints: [String: Entity] = [:]
-    private var handJoints: [Int: Entity] = [:]
+    // 关节球缓存 (key 严格使用对应的 JointName 枚举)
+    private var bodyJoints: [VNHumanBodyPoseObservation.JointName: Entity] = [:]
+    private var leftHandJoints: [VNHumanHandPoseObservation.JointName: Entity] = [:]
+    private var rightHandJoints: [VNHumanHandPoseObservation.JointName: Entity] = [:]
     private var faceJoints: [Int: Entity] = [:]
 
     private var lastFrameTime: CFTimeInterval = 0
     private var lastVisionFrame: CFTimeInterval = 0
 
-    private init() {
+    private override init() {
         super.init()
         let config = ARWorldTrackingConfiguration()
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
@@ -79,15 +80,16 @@ final class ARController: NSObject, ObservableObject {
     }
 
     private func setupGrid() {
-        let step: Float = 1.0, extent: Float = 8.0
+        let step: Float = 1.0
+        let extent: Float = 8.0
         gridEntities.forEach { gridAnchor.removeChild($0) }
         gridEntities.removeAll()
         for x in stride(from: -extent, through: extent, by: step) {
             for z in stride(from: -extent, through: extent, by: step) {
                 let node = ModelEntity(
-                    mesh: .generateBox(size: [0.02, 0.005, 0.02]),
+                    mesh: .generateBox(size: [0.02 as Float, 0.005 as Float, 0.02 as Float]),
                     materials: [SimpleMaterial(color: .cyan.withAlphaComponent(0.3), roughness: 0, isMetallic: false)])
-                node.position = [x, 0, z]
+                node.position = [x, 0 as Float, z]
                 gridAnchor.addChild(node)
                 gridEntities.append(node)
             }
@@ -122,7 +124,7 @@ extension ARController: ARSessionDelegate {
         let now = CACurrentMediaTime()
         if lastFrameTime > 0 {
             let dt = now - lastFrameTime
-            if dt > 0, dt < 1 { fps = fps * 0.8 + (1/dt) * 0.2 }
+            if dt > 0, dt < 1 { fps = fps * 0.8 + (1.0/dt) * 0.2 }
         }
         lastFrameTime = now
 
@@ -208,14 +210,15 @@ extension ARController {
 // MARK: - 身体 (2D 关键点 + 深度反投影)
 extension ARController {
     func updateBody(from obs: VNHumanBodyPoseObservation, camera: ARCamera, sceneDepth: ARDepthData?) {
-        var worldPoints: [String: SIMD3<Float>] = [:]
+        // key 必须用 JointName 枚举, 与 bodyJoints 字典一致
+        var worldPoints: [VNHumanBodyPoseObservation.JointName: SIMD3<Float>] = [:]
         var confs: [Float] = []
         for name in obs.availableJointNames {
             guard let pt = try? obs.recognizedPoint(name) else { continue }
             confs.append(pt.confidence)
             let nx = pt.location.x, ny = pt.location.y
             if let p = projectToWorld(nx: nx, ny: ny, camera: camera, sceneDepth: sceneDepth) {
-                worldPoints[name.rawValue] = p
+                worldPoints[name] = p
             }
         }
         lastBodyConfidence = Double(confs.min() ?? 0)
@@ -243,25 +246,35 @@ extension ARController {
 // MARK: - 手部 (21 点 / 手)
 extension ARController {
     func updateHand(from obs: VNHumanHandPoseObservation, isLeft: Bool, camera: ARCamera, sceneDepth: ARDepthData?) {
-        var worldPoints: [String: SIMD3<Float>] = [:]
+        // key 用 VNHumanHandPoseObservation.JointName, 与 left/rightHandJoints 字典一致
+        var worldPoints: [VNHumanHandPoseObservation.JointName: SIMD3<Float>] = [:]
         for name in obs.availableJointNames {
             guard let pt = try? obs.recognizedPoint(name) else { continue }
             if let p = projectToWorld(nx: pt.location.x, ny: pt.location.y, camera: camera, sceneDepth: sceneDepth) {
-                worldPoints[name.rawValue] = p
+                worldPoints[name] = p
             }
         }
         guard !worldPoints.isEmpty else { clearHand(isLeft: isLeft); return }
 
         let anchor = isLeft ? leftHandAnchor : rightHandAnchor
-        let prefix = isLeft ? "L_" : "R_"
         let color: UIColor = isLeft ? .orange : .systemPink
 
-        for (key, pos) in worldPoints {
-            let k = prefix + key
-            let node = handJoints[hash(k)] ?? makeJoint(color: color, radius: 0.008)
-            node.position = pos
-            if handJoints[hash(k)] == nil {
-                anchor.addChild(node); handJoints[hash(k)] = node
+        // 左右手分别用不同字典, 避免 JointName 冲突
+        if isLeft {
+            for (key, pos) in worldPoints {
+                let node = leftHandJoints[key] ?? makeJoint(color: color, radius: 0.008)
+                node.position = pos
+                if leftHandJoints[key] == nil {
+                    anchor.addChild(node); leftHandJoints[key] = node
+                }
+            }
+        } else {
+            for (key, pos) in worldPoints {
+                let node = rightHandJoints[key] ?? makeJoint(color: color, radius: 0.008)
+                node.position = pos
+                if rightHandJoints[key] == nil {
+                    anchor.addChild(node); rightHandJoints[key] = node
+                }
             }
         }
         anchor.isEnabled = true
@@ -317,7 +330,7 @@ extension ARController {
         let intrinsics = camera.intrinsics
         let resolution = camera.imageResolution
         let px = Float(nx) * Float(resolution.width)
-        let py = Float(1 - ny) * Float(resolution.height)
+        let py = Float(1.0 - ny) * Float(resolution.height)
 
         var depth: Float = 1.0
         if let depthMap = sceneDepth?.depthMap {
@@ -342,7 +355,7 @@ extension ARController {
         let xCam = (px - cx0) / fx * depth
         let yCam = (py - cy0) / fy * depth
 
-        let camPoint = SIMD4<Float>(xCam, yCam, depth, 1)
+        let camPoint = SIMD4<Float>(xCam, yCam, depth, 1.0)
         let world = camera.transform * camPoint
         return SIMD3<Float>(world.x, world.y, world.z)
     }
