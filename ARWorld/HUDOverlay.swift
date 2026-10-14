@@ -169,7 +169,7 @@ struct MenuPanel: View {
     @Binding var gridOn: Bool
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section("SKELETON MODULES") {
                     Toggle("Full Body (33 pts)", isOn: $bodyOn)

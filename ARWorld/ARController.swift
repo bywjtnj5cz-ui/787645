@@ -227,7 +227,7 @@ extension ARController {
             // body
             if isBody {
                 if let obs = bodyResults.first {
-                    self.updateBody(from: obs)
+                    self.updateBody(from: obs, camera: camera, sceneDepth: sceneDepth)
                 } else {
                     self.clearBody()
                 }
@@ -268,75 +268,68 @@ extension ARController {
     }
 }
 
-// MARK: - 身体骨骼
+// MARK: - 身体骨骼 (Vision 2D 关键点 + 深度反投影到 3D)
 extension ARController {
-    func updateBody(from observation: VNHumanBodyPoseObservation) {
-        guard #available(iOS 17.0, *) else { clearBody(); return }
-        // Vision 3D 关键点 (ARWorld 坐标系)
-        let joints3D = observation.keypoints3D
-        guard !joints3D.isEmpty else { clearBody(); return }
+    func updateBody(from observation: VNHumanBodyPoseObservation, camera: ARCamera, sceneDepth: ARDepthData?) {
+        guard let joints = try? observation.recognizedPoints(VNHumanBodyPoseObservation.JointName.all) else { clearBody(); return }
+        guard !joints.isEmpty else { clearBody(); return }
 
-        // 转成 [String: VNRecognizedPoint3D] 便于按名称查找
-        var byName: [String: VNRecognizedPoint3D] = [:]
-        for (name, pt) in joints3D { byName[name.rawValue] = pt }
-
-        lastBodyConfidence = Double(joints3D.values.compactMap { $0.confidence }.min() ?? 0)
+        // 把 2D 归一化关键点反投影到 AR 世界 3D
+        var worldPoints: [Int: SIMD3<Float>] = [:]
+        for (name, pt) in joints {
+            let p = projectToWorld(nx: pt.location.x, ny: pt.location.y, camera: camera, sceneDepth: sceneDepth)
+            if let p = p { worldPoints[name.rawValue] = p }
+        }
+        lastBodyConfidence = Double(joints.values.compactMap { $0.confidence }.min() ?? 0)
 
         // 画关节
-        for (name, pt) in joints3D {
-            guard let loc = pt.location else { continue }
+        for (name, _) in joints {
             let key = name.rawValue
-            let worldPos = SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
-            let node = bodyJoints[key] ?? makeJoint(color: .green, radius: 0.015)
-            node.position = worldPos
-            if bodyJoints[key] == nil {
-                bodyAnchor.addChild(node); bodyJoints[key] = node
+            guard let pos = worldPoints[key] else { continue }
+            let node = bodyJoints[String(key)] ?? makeJoint(color: .green, radius: 0.015)
+            node.position = pos
+            if bodyJoints[String(key)] == nil {
+                bodyAnchor.addChild(node); bodyJoints[String(key)] = node
             }
         }
-        drawBodyEdges(byName)
+        drawBodyEdges(worldPoints)
         bodyAnchor.isEnabled = true
     }
 
-    // 身体拓扑对 (用 JointName 的 rawValue 字符串)
-    func drawBodyEdges(_ joints: [String: VNRecognizedPoint3D]) {
+    // 身体拓扑对 (用 VNHumanBodyPoseObservation.JointName 的 rawValue)
+    func drawBodyEdges(_ worldPoints: [Int: SIMD3<Float>]) {
         bodyEdges.forEach { bodyAnchor.removeChild($0) }
         bodyEdges.removeAll()
 
-        let pairs: [(String, String, UIColor, Float)] = [
+        let pairs: [(VNHumanBodyPoseObservation.JointName, VNHumanBodyPoseObservation.JointName, UIColor, Float)] = [
             // 躯干
-            ("center", "neck", .green, 0.008),
-            ("neck", "right_shoulder", .green, 0.008),
-            ("neck", "left_shoulder", .green, 0.008),
-            ("right_shoulder", "right_hip", .green, 0.008),
-            ("left_shoulder", "left_hip", .green, 0.008),
-            ("right_hip", "left_hip", .green, 0.008),
+            (.neck, .rightShoulder, .green, 0.008),
+            (.neck, .leftShoulder, .green, 0.008),
+            (.rightShoulder, .rightHip, .green, 0.008),
+            (.leftShoulder, .leftHip, .green, 0.008),
+            (.rightHip, .leftHip, .green, 0.008),
             // 右臂
-            ("right_shoulder", "right_elbow", .cyan, 0.007),
-            ("right_elbow", "right_wrist", .cyan, 0.007),
+            (.rightShoulder, .rightElbow, .cyan, 0.007),
+            (.rightElbow, .rightWrist, .cyan, 0.007),
             // 左臂
-            ("left_shoulder", "left_elbow", .cyan, 0.007),
-            ("left_elbow", "left_wrist", .cyan, 0.007),
+            (.leftShoulder, .leftElbow, .cyan, 0.007),
+            (.leftElbow, .leftWrist, .cyan, 0.007),
             // 右腿
-            ("right_hip", "right_knee", .yellow, 0.007),
-            ("right_knee", "right_ankle", .yellow, 0.007),
+            (.rightHip, .rightKnee, .yellow, 0.007),
+            (.rightKnee, .rightAnkle, .yellow, 0.007),
             // 左腿
-            ("left_hip", "left_knee", .yellow, 0.007),
-            ("left_knee", "left_ankle", .yellow, 0.007),
+            (.leftHip, .leftKnee, .yellow, 0.007),
+            (.leftKnee, .leftAnkle, .yellow, 0.007),
             // 头
-            ("neck", "top_head", .green, 0.008),
+            (.nose, .neck, .green, 0.008),
         ]
         for (a, b, color, r) in pairs {
-            guard let pa = simdForName(joints, name: a),
-                  let pb = simdForName(joints, name: b) else { continue }
+            guard let pa = worldPoints[a.rawValue],
+                  let pb = worldPoints[b.rawValue] else { continue }
             let edge = makeLine(from: pa, to: pb, color: color, thickness: r)
             bodyAnchor.addChild(edge)
             bodyEdges.append(edge)
         }
-    }
-
-    func simdForName(_ joints: [String: VNRecognizedPoint3D], name: String) -> SIMD3<Float>? {
-        guard let j = joints[name], let loc = j.location else { return nil }
-        return SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
     }
 
     func clearBody() { bodyAnchor.isEnabled = false }
@@ -366,46 +359,45 @@ extension ARController {
     }
 }
 
-// MARK: - 手部 (21 点 / 手)
+// MARK: - 手部 (21 点 / 手, Vision 2D + 深度反投影)
 extension ARController {
     func updateHand(from observation: VNHumanHandPoseObservation, isLeft: Bool, camera: ARCamera, sceneDepth: ARDepthData?) {
-        guard #available(iOS 17.0, *) else { clearHand(isLeft: isLeft); return }
-        let joints3D = observation.keypoints3D
-        guard !joints3D.isEmpty else { clearHand(isLeft: isLeft); return }
+        guard let joints = try? observation.recognizedPoints(VNHumanHandPoseObservation.JointName.all) else { clearHand(isLeft: isLeft); return }
+        guard !joints.isEmpty else { clearHand(isLeft: isLeft); return }
 
-        var byName: [String: VNRecognizedPoint3D] = [:]
-        for (name, pt) in joints3D { byName[name.rawValue] = pt }
+        var worldPoints: [Int: SIMD3<Float>] = [:]
+        for (name, pt) in joints {
+            let p = projectToWorld(nx: pt.location.x, ny: pt.location.y, camera: camera, sceneDepth: sceneDepth)
+            if let p = p { worldPoints[name.rawValue] = p }
+        }
 
         let anchor = isLeft ? leftHandAnchor : rightHandAnchor
         let keyPrefix = isLeft ? 100 : 200
         let color: UIColor = isLeft ? .orange : .systemPink
 
         // 画关节
-        var idx = 0
-        for (_, pt) in joints3D {
-            guard let loc = pt.location else { idx += 1; continue }
-            let pos = SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
-            let key = keyPrefix + idx
+        for (name, _) in joints {
+            let key = keyPrefix + name.rawValue
+            guard let pos = worldPoints[name.rawValue] else { continue }
             let node = handJoints[key] ?? makeJoint(color: color, radius: 0.008)
             node.position = pos
             if handJoints[key] == nil {
                 anchor.addChild(node); handJoints[key] = node
             }
-            idx += 1
         }
 
-        // 手部拓扑对 (按 3D joint name 字符串)
-        let pairs: [(String, String)] = [
-            ("wrist", "thumb_cmc"), ("thumb_cmc", "thumb_mcp"), ("thumb_mcp", "thumb_ip"), ("thumb_ip", "thumb_tip"),
-            ("wrist", "index_mcp"), ("index_mcp", "index_pip"), ("index_pip", "index_dip"), ("index_dip", "index_tip"),
-            ("wrist", "middle_mcp"), ("middle_mcp", "middle_pip"), ("middle_pip", "middle_dip"), ("middle_dip", "middle_tip"),
-            ("wrist", "ring_mcp"), ("ring_mcp", "ring_pip"), ("ring_pip", "ring_dip"), ("ring_dip", "ring_tip"),
-            ("wrist", "little_mcp"), ("little_mcp", "little_pip"), ("little_pip", "little_dip"), ("little_dip", "little_tip"),
-            ("index_mcp", "middle_mcp"), ("middle_mcp", "ring_mcp"), ("ring_mcp", "little_mcp"),
+        // 手部拓扑对
+        let pairs: [(VNHumanHandPoseObservation.JointName, VNHumanHandPoseObservation.JointName)] = [
+            (.wrist, .thumbCMC), (.thumbCMC, .thumbMCP), (.thumbMCP, .thumbIP), (.thumbIP, .thumbTip),
+            (.wrist, .indexMCP), (.indexMCP, .indexPIP), (.indexPIP, .indexDIP), (.indexDIP, .indexTip),
+            (.wrist, .middleMCP), (.middleMCP, .middlePIP), (.middlePIP, .middleDIP), (.middleDIP, .middleTip),
+            (.wrist, .ringMCP), (.ringMCP, .ringPIP), (.ringPIP, .ringDIP), (.ringDIP, .ringTip),
+            (.wrist, .littleMCP), (.littleMCP, .littlePIP), (.littlePIP, .littleDIP), (.littleDIP, .littleTip),
+            (.indexMCP, .middleMCP), (.middleMCP, .ringMCP), (.ringMCP, .littleMCP),
         ]
         for (a, b) in pairs {
-            guard let pa = simdForName(byName, name: a),
-                  let pb = simdForName(byName, name: b) else { continue }
+            guard let pa = worldPoints[a.rawValue],
+                  let pb = worldPoints[b.rawValue] else { continue }
             let edge = makeLine(from: pa, to: pb, color: color, thickness: 0.004)
             anchor.addChild(edge)
             handEdges.append(edge)
@@ -426,8 +418,8 @@ extension ARController {
         guard let landmarks = observation.landmarks else { clearFace(); return }
 
         // 取所有关键点 (468 个), 归一化坐标, 反投影到 3D
-        guard let allPoints = landmarks.allPoints,
-              let normalizedPoints = allPoints.normalizedPoints else { clearFace(); return }
+        guard let allPoints = landmarks.allPoints else { clearFace(); return }
+        let normalizedPoints = allPoints.normalizedPoints
 
         let bb = observation.boundingBox
         let cx = (bb.minX + bb.maxX) * 0.5
