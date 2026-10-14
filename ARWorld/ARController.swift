@@ -179,7 +179,7 @@ extension ARController {
         // 解析结果 (都在主线程,直接消费 ARFrame.camera 和 depth)
         // body: first result (VNHumanBodyPose3D? iOS 15+ 直接 3D)
         // body 在 iOS 15+ 返回 3D 关键点 (VNRecognizedPoints3D),省去反投影
-        if isBodyEnabled, let pose = requests.first(where: $0 is VNDetectHumanBodyPoseRequest) as? VNDetectHumanBodyPoseRequest {
+        if isBodyEnabled, let pose = requests.first(where: { $0 is VNDetectHumanBodyPoseRequest }) as? VNDetectHumanBodyPoseRequest {
             if let results = pose.results, !results.isEmpty {
                 updateBody(from: results[0], frame: frame)
             } else {
@@ -192,7 +192,7 @@ extension ARController {
         // hands
         if isHandsEnabled {
             // 请求顺序:body, hand, face。找 VNDetectHumanHandPoseRequest
-            if let handReq = requests.first(where: $0 is VNDetectHumanHandPoseRequest) as? VNDetectHumanHandPoseRequest {
+            if let handReq = requests.first(where: { $0 is VNDetectHumanHandPoseRequest }) as? VNDetectHumanHandPoseRequest {
                 let handResults = handReq.results ?? []
                 lastHandCount = handResults.count
                 if handResults.count >= 2 {
@@ -212,7 +212,7 @@ extension ARController {
 
         // face
         if isFaceEnabled {
-            if let faceReq = requests.first(where: $0 is VNDetectFaceLandmarksRequest) as? VNDetectFaceLandmarksRequest {
+            if let faceReq = requests.first(where: { $0 is VNDetectFaceLandmarksRequest }) as? VNDetectFaceLandmarksRequest {
                 if let results = faceReq.results, let faceObs = results.first {
                     updateFace(from: faceObs, frame: frame)
                 } else {
