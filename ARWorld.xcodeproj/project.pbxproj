@@ -1,0 +1,283 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		54F37FA3E6AF4C5E8434697B /* ARController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 822F83D204664399A4CF17E4 /* ARController.swift */; };
+		6BB0345DB79B47EC8FF69048 /* ARWorldApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2FCA17464345E895E8FF23 /* ARWorldApp.swift */; };
+		2F18E1302B514CB1AE99D35B /* HUDOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC9084C8023A4A7C8EC308B0 /* HUDOverlay.swift */; };
+		DD1E73D73BE94A8FAF3A9F52 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9F48D1C01ED440618D432701 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		822F83D204664399A4CF17E4 /* ARController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ARController.swift"; sourceTree = "<group>"; };
+		AE2FCA17464345E895E8FF23 /* ARWorldApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ARWorldApp.swift"; sourceTree = "<group>"; };
+		CC9084C8023A4A7C8EC308B0 /* HUDOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HUDOverlay.swift"; sourceTree = "<group>"; };
+		9F48D1C01ED440618D432701 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Assets.xcassets"; sourceTree = "<group>"; };
+		FDF8E11B204842A19C18E9B5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2FFB5C7300544704814FFB6C /* ARWorld.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ARWorld.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		6495D454FF0D4316BBD38F07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		9BE684A09177453B9DD0C987 = {
+			isa = PBXGroup;
+			children = (
+				B32536285AF74736819BD234 /* ARWorld */,
+				01E84BBE43B14E7D881D8D52 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B32536285AF74736819BD234 /* ARWorld */ = {
+			isa = PBXGroup;
+			children = (
+				822F83D204664399A4CF17E4 /* ARController.swift */,
+				AE2FCA17464345E895E8FF23 /* ARWorldApp.swift */,
+				CC9084C8023A4A7C8EC308B0 /* HUDOverlay.swift */,
+				FDF8E11B204842A19C18E9B5 /* Info.plist */,
+				9F48D1C01ED440618D432701 /* Assets.xcassets */,
+			);
+			path = ARWorld;
+			sourceTree = "<group>";
+		};
+		01E84BBE43B14E7D881D8D52 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				2FFB5C7300544704814FFB6C /* ARWorld.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		2E738E2960464D7BBB6CA2EC /* ARWorld */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9136A2582C28429ABD61E4CE /* Build configuration list for PBXNativeTarget "ARWorld" */;
+			buildPhases = (
+				4330F19FE38E4EC6AADB4AE9 /* Sources */,
+				6495D454FF0D4316BBD38F07 /* Frameworks */,
+				4AC4F427D9964B7BB0595889 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ARWorld;
+			productName = ARWorld;
+			productReference = 2FFB5C7300544704814FFB6C /* ARWorld.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		199A68E3C881486AA1AAB6CC /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					2E738E2960464D7BBB6CA2EC = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 727F7540C82049E8B7CCC83F /* Build configuration list for PBXProject "ARWorld" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 9BE684A09177453B9DD0C987;
+			productRefGroup = 01E84BBE43B14E7D881D8D52 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				2E738E2960464D7BBB6CA2EC /* ARWorld */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4AC4F427D9964B7BB0595889 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD1E73D73BE94A8FAF3A9F52 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4330F19FE38E4EC6AADB4AE9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54F37FA3E6AF4C5E8434697B /* ARController.swift in Sources */,
+				6BB0345DB79B47EC8FF69048 /* ARWorldApp.swift in Sources */,
+				2F18E1302B514CB1AE99D35B /* HUDOverlay.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A1DA148C362489AAEE18331 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		924C0596FE3F4BCD9E28AE9F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D569B7DE5F42406CA13E56B7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ARWorld/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arworld.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A17A161CD8C49D2B8EE42A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ARWorld/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.arworld.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		727F7540C82049E8B7CCC83F /* Build configuration list for PBXProject "ARWorld" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A1DA148C362489AAEE18331 /* Debug */,
+				924C0596FE3F4BCD9E28AE9F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9136A2582C28429ABD61E4CE /* Build configuration list for PBXNativeTarget "ARWorld" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D569B7DE5F42406CA13E56B7 /* Debug */,
+				0A17A161CD8C49D2B8EE42A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 199A68E3C881486AA1AAB6CC /* Project object */;
+}
