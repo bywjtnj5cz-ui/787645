@@ -181,8 +181,9 @@ struct MenuPanel: View {
                     Button("Reset AR Tracking") {
                         // 重建 session
                         let config = ARWorldTrackingConfiguration()
-                        config.frameSemantics.insert(.depthData)
-                        config.frameSemantics.insert(.smoothedDepthData)
+                        if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                            config.frameSemantics.insert(.sceneDepth)
+                        }
                         ar.arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
                     }
                 }

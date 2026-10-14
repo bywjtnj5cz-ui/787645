@@ -4,7 +4,7 @@ import RealityKit
 
 @main
 struct ARWorldApp: App {
-    var body: some Scene {
+    var body: some SwiftUI.Scene {
         WindowGroup {
             ContentView()
                 .statusBarHidden(true)
@@ -54,12 +54,12 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showMenu) {
             MenuPanel(ar: ar, bodyOn: $bodyOn, handsOn: $handsOn, faceOn: $faceOn, gridOn: $gridOn)
-                .presentationDetents([.medium])
+                .applyDetents()
         }
-        .onChange(of: bodyOn) { ar.isBodyEnabled = $0 }
-        .onChange(of: handsOn) { ar.isHandsEnabled = $0 }
-        .onChange(of: faceOn) { ar.isFaceEnabled = $0 }
-        .onChange(of: gridOn) { ar.isGridEnabled = $0 }
+        .onChange(of: bodyOn) { newValue in ar.isBodyEnabled = newValue }
+        .onChange(of: handsOn) { newValue in ar.isHandsEnabled = newValue }
+        .onChange(of: faceOn) { newValue in ar.isFaceEnabled = newValue }
+        .onChange(of: gridOn) { newValue in ar.isGridEnabled = newValue }
         .task {
             ar.start()
         }
@@ -74,4 +74,16 @@ struct ARViewContainer: UIViewRepresentable {
         ar.arView
     }
     func updateUIView(_ uiView: ARView, context: Context) {}
+}
+
+// MARK: - presentationDetents 可用性封装 (iOS 16+)
+extension View {
+    @ViewBuilder
+    func applyDetents() -> some View {
+        if #available(iOS 16.0, *) {
+            self.presentationDetents([.medium])
+        } else {
+            self
+        }
+    }
 }

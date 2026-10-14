@@ -7,7 +7,7 @@ import UIKit
 
 // MARK: - 共享控制器 (AR + Vision + 3D 渲染 协调者)
 @MainActor
-final class ARController: ObservableObject {
+final class ARController: NSObject, ObservableObject {
     static let shared = ARController()
 
     let arView: ARView
@@ -28,12 +28,12 @@ final class ARController: ObservableObject {
     @Published var lastHandCount: Int = 0
     @Published var lastFaceConfidence: Double = 0
 
-    // 3D 实体容器 (每种骨骼一个锚点)
-    private let bodyAnchor = Entity()
-    private let leftHandAnchor = Entity()
-    private let rightHandAnchor = Entity()
-    private let faceAnchor = Entity()
-    private let gridAnchor = Entity()
+    // 3D 实体容器 (每种骨骼一个锚点, AnchorEntity 符合 HasAnchoring)
+    private let bodyAnchor = AnchorEntity()
+    private let leftHandAnchor = AnchorEntity()
+    private let rightHandAnchor = AnchorEntity()
+    private let faceAnchor = AnchorEntity()
+    private let gridAnchor = AnchorEntity()
     private var gridEntities: [Entity] = []
 
     // 上一帧时间戳 (FPS 计算 + 丢帧)
@@ -41,18 +41,22 @@ final class ARController: ObservableObject {
     private var lastVisionFrame: CFTimeInterval = 0
 
     // 模型实体缓存 (避免每帧重新创建 mesh)
-    private var bodyJoints: [Int: Entity] = [:]
+    private var bodyJoints: [String: Entity] = [:]
     private var bodyEdges: [Entity] = []
     private var handJoints: [Int: Entity] = [:]  // 双手用合并 key (hand * 100 + index)
     private var handEdges: [Entity] = []
-    private var faceMesh: ModelEntity?
     private var faceJoints: [Int: Entity] = [:]
 
-    private init() {
+    private override init() {
+        super.init()
         // RealityKit ARView, 启用 LiDAR 深度
         let config = ARWorldTrackingConfiguration()
-        config.frameSemantics.insert(.depthData)       // LiDAR 深度
-        config.frameSemantics.insert(.smoothedDepthData)
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+            config.frameSemantics.insert(.sceneDepth)
+        }
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
+            config.frameSemantics.insert(.smoothedSceneDepth)
+        }
         config.environmentTexturing = .automatic
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth) {
             config.frameSemantics.insert(.personSegmentationWithDepth)
@@ -60,9 +64,10 @@ final class ARController: ObservableObject {
         arView = ARView(frame: .zero,
                         cameraMode: .ar,
                         automaticallyConfigureSession: false)
-        arView.session = ARSession()
-        arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
-        arView.session.delegate = self
+        arSession = ARSession()
+        arView.session = arSession
+        arSession.delegate = self
+        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
 
         arView.scene.addAnchor(bodyAnchor)
         arView.scene.addAnchor(leftHandAnchor)
@@ -95,11 +100,30 @@ final class ARController: ObservableObject {
         }
         gridAnchor.isEnabled = isGridEnabled
     }
+
+    func resetTracking() {
+        let config = ARWorldTrackingConfiguration()
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+            config.frameSemantics.insert(.sceneDepth)
+        }
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
+            config.frameSemantics.insert(.smoothedSceneDepth)
+        }
+        config.environmentTexturing = .automatic
+        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
+    }
 }
 
 // MARK: - ARSessionDelegate (每帧驱动 Vision)
 extension ARController: ARSessionDelegate {
-    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+    nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // 注意: 此回调由 ARSession 在其自身队列调用, 我们切到 MainActor 处理
+        Task { @MainActor in
+            self.handleFrame(frame)
+        }
+    }
+
+    private func handleFrame(_ frame: ARFrame) {
         // 跟踪状态
         switch frame.camera.trackingState {
         case .normal:  trackingState = "TRACK"
@@ -115,8 +139,8 @@ extension ARController: ARSessionDelegate {
         @unknown default: break
         }
 
-        // 深度可用?
-        depthAvailable = frame.depthData != nil
+        // 深度可用? (LiDAR)
+        depthAvailable = frame.sceneDepth != nil
 
         // FPS
         let now = CACurrentMediaTime()
@@ -126,45 +150,63 @@ extension ARController: ARSessionDelegate {
         }
         lastFrameTime = now
 
-        // 丢帧策略:Vision 在后台跑,主线程 ARSessionDelegate 里每 2-3 帧喂一次(看机型)
-        // iPad/LiDAR 机型帧间间隔小,iPhone 旧机型帧间隔大,统一阈值 40ms
+        // 丢帧策略: 每 40ms 跑一次 Vision
         guard now - lastVisionFrame > 0.04 else { return }
         lastVisionFrame = now
 
-        // 复制当前 frame,送到 Vision 队列
-        let frameCopy = frame
+        // 提取像素缓冲 + 相机参数, 送到后台队列跑 Vision
+        let pixelBuffer = frame.capturedImage
+        let camera = frame.camera
+        let sceneDepth = frame.sceneDepth
+        let isBody = isBodyEnabled
+        let isHands = isHandsEnabled
+        let isFace = isFaceEnabled
+
         visionQueue.async { [weak self] in
-            Task { @MainActor in self?.runVision(frame: frameCopy) }
+            self?.runVisionOnBackground(pixelBuffer: pixelBuffer,
+                                        camera: camera,
+                                        sceneDepth: sceneDepth,
+                                        isBody: isBody,
+                                        isHands: isHands,
+                                        isFace: isFace)
         }
     }
 }
 
-// MARK: - Vision 请求链 (Pose + Hand × 2 + FaceLandmarks)
+// MARK: - Vision 请求链 (Pose + Hand × 2 + FaceLandmarks) — 在后台队列执行
 extension ARController {
-    func runVision(frame: ARFrame) {
+    private nonisolated func runVisionOnBackground(pixelBuffer: CVPixelBuffer,
+                                                   camera: ARCamera,
+                                                   sceneDepth: ARDepthData?,
+                                                   isBody: Bool, isHands: Bool, isFace: Bool) {
         let orientation = CGImagePropertyOrientation.right  // 后置摄像头竖屏
-        let handler = VNImageRequestHandler(cvPixelBuffer: frame.capturedImage,
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer,
                                             orientation: orientation,
                                             options: [:])
         var requests: [VNRequest] = []
 
-        if isBodyEnabled {
+        var poseReq: VNDetectHumanBodyPoseRequest?
+        var handReq: VNDetectHumanHandPoseRequest?
+        var faceReq: VNDetectFaceLandmarksRequest?
+
+        if isBody {
             let pose = VNDetectHumanBodyPoseRequest()
-            pose.maximumHumanBodyPoseCount = 1
             requests.append(pose)
+            poseReq = pose
         }
-        if isHandsEnabled {
+        if isHands {
             let hand = VNDetectHumanHandPoseRequest()
             hand.maximumHandCount = 2
             requests.append(hand)
+            handReq = hand
         }
-        if isFaceEnabled {
+        if isFace {
             let face = VNDetectFaceLandmarksRequest()
-            face.maximumFaceCount = 1
             requests.append(face)
+            faceReq = face
         }
         guard !requests.isEmpty else {
-            clearAllAnchors()
+            Task { @MainActor in self.clearAllAnchors() }
             return
         }
 
@@ -172,135 +214,133 @@ extension ARController {
             try handler.perform(requests)
         } catch {
             print("[Vision] error:", error)
-            clearAllAnchors()
+            Task { @MainActor in self.clearAllAnchors() }
             return
         }
 
-        // 解析结果 (都在主线程,直接消费 ARFrame.camera 和 depth)
-        // body: first result (VNHumanBodyPose3D? iOS 15+ 直接 3D)
-        // body 在 iOS 15+ 返回 3D 关键点 (VNRecognizedPoints3D),省去反投影
-        if isBodyEnabled, let pose = requests.first(where: { $0 is VNDetectHumanBodyPoseRequest }) as? VNDetectHumanBodyPoseRequest {
-            if let results = pose.results, !results.isEmpty {
-                updateBody(from: results[0], frame: frame)
+        // 解析结果, 切回主线程渲染
+        let bodyResults = poseReq?.results ?? []
+        let handResults = handReq?.results ?? []
+        let faceResults = faceReq?.results ?? []
+
+        Task { @MainActor in
+            // body
+            if isBody {
+                if let obs = bodyResults.first {
+                    self.updateBody(from: obs)
+                } else {
+                    self.clearBody()
+                }
             } else {
-                clearBody()
+                self.clearBody()
             }
-        } else if isBodyEnabled {
-            clearBody()
-        }
 
-        // hands
-        if isHandsEnabled {
-            // 请求顺序:body, hand, face。找 VNDetectHumanHandPoseRequest
-            if let handReq = requests.first(where: { $0 is VNDetectHumanHandPoseRequest }) as? VNDetectHumanHandPoseRequest {
-                let handResults = handReq.results ?? []
-                lastHandCount = handResults.count
+            // hands
+            if isHands {
+                self.lastHandCount = handResults.count
                 if handResults.count >= 2 {
-                    updateHand(from: handResults[0], isLeft:  true,  frame: frame)
-                    updateHand(from: handResults[1], isLeft:  false, frame: frame)
+                    self.updateHand(from: handResults[0], isLeft: true, camera: camera, sceneDepth: sceneDepth)
+                    self.updateHand(from: handResults[1], isLeft: false, camera: camera, sceneDepth: sceneDepth)
                 } else if handResults.count == 1 {
-                    updateHand(from: handResults[0], isLeft:  true,  frame: frame)
-                    clearHand(isLeft: false)
+                    self.updateHand(from: handResults[0], isLeft: true, camera: camera, sceneDepth: sceneDepth)
+                    self.clearHand(isLeft: false)
                 } else {
-                    clearHand(isLeft: true)
-                    clearHand(isLeft: false)
+                    self.clearHand(isLeft: true)
+                    self.clearHand(isLeft: false)
                 }
+            } else {
+                self.clearHand(isLeft: true); self.clearHand(isLeft: false)
             }
-        } else {
-            clearHand(isLeft: true); clearHand(isLeft: false)
-        }
 
-        // face
-        if isFaceEnabled {
-            if let faceReq = requests.first(where: { $0 is VNDetectFaceLandmarksRequest }) as? VNDetectFaceLandmarksRequest {
-                if let results = faceReq.results, let faceObs = results.first {
-                    updateFace(from: faceObs, frame: frame)
+            // face
+            if isFace {
+                if let obs = faceResults.first {
+                    self.updateFace(from: obs, camera: camera, sceneDepth: sceneDepth)
                 } else {
-                    clearFace()
+                    self.clearFace()
                 }
+            } else {
+                self.clearFace()
             }
-        } else {
-            clearFace()
-        }
 
-        gridAnchor.isEnabled = isGridEnabled
+            self.gridAnchor.isEnabled = self.isGridEnabled
+        }
     }
 }
 
-// MARK: - 身体骨骼 (33 点)
+// MARK: - 身体骨骼
 extension ARController {
-    func updateBody(from body: VNRecognizedPoints3D, frame: ARFrame) {
-        // Vision 返回的是 ARWorld 坐标系下的 3D 点 (iOS 15+)
-        // 用 .center 做跟踪参考点
-        guard let joints = try? body.recognizedPoints(.all) else { clearBody(); return }
-        lastBodyConfidence = joints.values.compactMap { $0.confidence }.min() ?? 0
+    func updateBody(from observation: VNHumanBodyPoseObservation) {
+        guard #available(iOS 17.0, *) else { clearBody(); return }
+        // Vision 3D 关键点 (ARWorld 坐标系)
+        let joints3D = observation.keypoints3D
+        guard !joints3D.isEmpty else { clearBody(); return }
 
-        // 33 关键点 ID → RealityKit Entity
-        for (rawIdx, rawPt) in joints {
-            let idx = rawIdx.rawValue
-            guard let pt = rawPt.location else { continue }
-            let worldPos = simd_float3(x: pt.x, y: pt.y, z: pt.z)
-            // 关节点球体 (复用已存在的 Entity 避免 GC)
-            let node = bodyJoints[idx] ?? makeJoint(color: .green, radius: 0.015)
+        // 转成 [String: VNRecognizedPoint3D] 便于按名称查找
+        var byName: [String: VNRecognizedPoint3D] = [:]
+        for (name, pt) in joints3D { byName[name.rawValue] = pt }
+
+        lastBodyConfidence = Double(joints3D.values.compactMap { $0.confidence }.min() ?? 0)
+
+        // 画关节
+        for (name, pt) in joints3D {
+            guard let loc = pt.location else { continue }
+            let key = name.rawValue
+            let worldPos = SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
+            let node = bodyJoints[key] ?? makeJoint(color: .green, radius: 0.015)
             node.position = worldPos
-            if bodyJoints[idx] == nil {
-                bodyAnchor.addChild(node); bodyJoints[idx] = node
+            if bodyJoints[key] == nil {
+                bodyAnchor.addChild(node); bodyJoints[key] = node
             }
         }
-        drawBodyEdges(joints)
+        drawBodyEdges(byName)
+        bodyAnchor.isEnabled = true
     }
 
-    // Vision 不返回 "边", 我们自己根据身体拓扑连线
-    // 这里用简化拓扑, 覆盖躯干 + 四肢 + 头
-    func drawBodyEdges(_ joints: [VNJointName3D: VNPoint3D]) {
-        // 清旧线
+    // 身体拓扑对 (用 JointName 的 rawValue 字符串)
+    func drawBodyEdges(_ joints: [String: VNRecognizedPoint3D]) {
         bodyEdges.forEach { bodyAnchor.removeChild($0) }
         bodyEdges.removeAll()
 
-        // 身体拓扑对 (VNJointName3D 的 rawValue 是 Int)
-        let pairs: [(Int,Int,UIColor,Float)] = [
+        let pairs: [(String, String, UIColor, Float)] = [
             // 躯干
-            (0, 11, .green, 0.008), (0, 12, .green, 0.008),
-            (11, 12, .green, 0.008), (11, 13, .green, 0.008),
-            (12, 14, .green, 0.008),
-            // 头
-            (0, 1, .green, 0.008), (1, 2, .green, 0.008),
-            (2, 3, .green, 0.008), (3, 7, .green, 0.008),
-            (0, 4, .green, 0.008), (4, 5, .green, 0.008),
-            (5, 6, .green, 0.008), (6, 8, .green, 0.008),
+            ("center", "neck", .green, 0.008),
+            ("neck", "right_shoulder", .green, 0.008),
+            ("neck", "left_shoulder", .green, 0.008),
+            ("right_shoulder", "right_hip", .green, 0.008),
+            ("left_shoulder", "left_hip", .green, 0.008),
+            ("right_hip", "left_hip", .green, 0.008),
             // 右臂
-            (14, 16, .cyan, 0.007), (16, 18, .cyan, 0.007), (18, 20, .cyan, 0.007),
-            (18, 22, .cyan, 0.007), (20, 22, .cyan, 0.007),
+            ("right_shoulder", "right_elbow", .cyan, 0.007),
+            ("right_elbow", "right_wrist", .cyan, 0.007),
             // 左臂
-            (13, 15, .cyan, 0.007), (15, 17, .cyan, 0.007), (17, 19, .cyan, 0.007),
-            (17, 21, .cyan, 0.007), (19, 21, .cyan, 0.007),
+            ("left_shoulder", "left_elbow", .cyan, 0.007),
+            ("left_elbow", "left_wrist", .cyan, 0.007),
             // 右腿
-            (12, 24, .yellow, 0.007), (24, 26, .yellow, 0.007),
-            (26, 28, .yellow, 0.007), (28, 30, .yellow, 0.007),
-            (28, 32, .yellow, 0.007), (30, 32, .yellow, 0.007),
+            ("right_hip", "right_knee", .yellow, 0.007),
+            ("right_knee", "right_ankle", .yellow, 0.007),
             // 左腿
-            (11, 23, .yellow, 0.007), (23, 25, .yellow, 0.007),
-            (25, 27, .yellow, 0.007), (27, 29, .yellow, 0.007),
-            (27, 31, .yellow, 0.007), (29, 31, .yellow, 0.007),
-            // 髋连接
-            (23, 24, .green, 0.008), (11, 23, .green, 0.008), (12, 24, .green, 0.008)
+            ("left_hip", "left_knee", .yellow, 0.007),
+            ("left_knee", "left_ankle", .yellow, 0.007),
+            // 头
+            ("neck", "top_head", .green, 0.008),
         ]
-        for (a,b,color,r) in pairs {
-            guard let pa = simdForJoint(joints, raw: a),
-                  let pb = simdForJoint(joints, raw: b) else { continue }
+        for (a, b, color, r) in pairs {
+            guard let pa = simdForName(joints, name: a),
+                  let pb = simdForName(joints, name: b) else { continue }
             let edge = makeLine(from: pa, to: pb, color: color, thickness: r)
             bodyAnchor.addChild(edge)
             bodyEdges.append(edge)
         }
     }
 
-    func simdForJoint(_ joints: [VNJointName3D: VNPoint3D], raw: Int) -> simd_float3? {
-        let name = VNJointName3D(rawValue: raw)
-        guard let j = joints[name] else { return nil }
-        return simd_float3(x: j.location.x, y: j.location.y, z: j.location.z)
+    func simdForName(_ joints: [String: VNRecognizedPoint3D], name: String) -> SIMD3<Float>? {
+        guard let j = joints[name], let loc = j.location else { return nil }
+        return SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
     }
 
     func clearBody() { bodyAnchor.isEnabled = false }
+
     func makeJoint(color: UIColor, radius: Float) -> ModelEntity {
         let sphere = MeshResource.generateSphere(radius: radius)
         let mat = SimpleMaterial(color: color, roughness: 0.1, isMetallic: false)
@@ -308,18 +348,18 @@ extension ARController {
         e.isEnabled = true
         return e
     }
-    func makeLine(from a: simd_float3, to b: simd_float3, color: UIColor, thickness: Float) -> Entity {
-        // RealityKit 没有直接的 generateLine,用细长 box 模拟
+
+    func makeLine(from a: SIMD3<Float>, to b: SIMD3<Float>, color: UIColor, thickness: Float) -> Entity {
         let delta = b - a
         let len = simd_length(delta)
+        guard len > 0.0001 else { return Entity() }
         let mid = a + delta * 0.5
         let box = MeshResource.generateBox(size: [thickness, thickness, len])
         let mat = SimpleMaterial(color: color, roughness: 0.1, isMetallic: false)
         let e = ModelEntity(mesh: box, materials: [mat])
         e.position = mid
-        // 旋转 box 的 z 轴到 delta 方向
         let dir = simd_normalize(delta)
-        let up = simd_float3(0, 0, 1)
+        let up = SIMD3<Float>(0, 0, 1)
         let q = simd_quatf(from: up, to: dir)
         e.transform.rotation = q
         return e
@@ -328,80 +368,133 @@ extension ARController {
 
 // MARK: - 手部 (21 点 / 手)
 extension ARController {
-    func updateHand(from hand: VNRecognizedPoints3D, isLeft: Bool, frame: ARFrame) {
-        guard let joints = try? hand.recognizedPoints(.all) else {
-            clearHand(isLeft: isLeft); return
-        }
-        let anchor = isLeft ? leftHandAnchor : rightHandAnchor
-        let keyPrefix = isLeft ? 100 : 200  // 区分左右手 joint id
-        let color: UIColor = isLeft ? .orange : .pink
+    func updateHand(from observation: VNHumanHandPoseObservation, isLeft: Bool, camera: ARCamera, sceneDepth: ARDepthData?) {
+        guard #available(iOS 17.0, *) else { clearHand(isLeft: isLeft); return }
+        let joints3D = observation.keypoints3D
+        guard !joints3D.isEmpty else { clearHand(isLeft: isLeft); return }
 
-        for (rawIdx, rawPt) in joints {
-            let idx = rawIdx.rawValue
-            guard let pt = rawPt.location else { continue }
-            let pos = simd_float3(x: pt.x, y: pt.y, z: pt.z)
+        var byName: [String: VNRecognizedPoint3D] = [:]
+        for (name, pt) in joints3D { byName[name.rawValue] = pt }
+
+        let anchor = isLeft ? leftHandAnchor : rightHandAnchor
+        let keyPrefix = isLeft ? 100 : 200
+        let color: UIColor = isLeft ? .orange : .systemPink
+
+        // 画关节
+        var idx = 0
+        for (_, pt) in joints3D {
+            guard let loc = pt.location else { idx += 1; continue }
+            let pos = SIMD3<Float>(Float(loc.x), Float(loc.y), Float(loc.z))
             let key = keyPrefix + idx
             let node = handJoints[key] ?? makeJoint(color: color, radius: 0.008)
             node.position = pos
             if handJoints[key] == nil {
                 anchor.addChild(node); handJoints[key] = node
             }
+            idx += 1
         }
 
-        // 拓扑对 (掌心 0 → 手指 1-4, 每根手指 1 个关键点)
-        // HandPose 在 iOS 15+ 返回 11 个关键点 (wrist + 5 手指 base), 21 个点需要 iOS 17+ 或扩展
-        // 这里兼容用简化拓扑
-        let pairs: [(Int,Int)] = [
-            (0,1),(1,2),(2,3),(3,4),   // 拇指
-            (0,5),(5,6),(6,7),(7,8),   // 食指
-            (0,9),(9,10),(10,11),(11,12),   // 中指
-            (0,13),(13,14),(14,15),(15,16), // 无名指
-            (0,17),(17,18),(18,19),(19,20), // 小指
-            (5,17),(5,9),(9,13),(13,17)     // 掌弓
+        // 手部拓扑对 (按 3D joint name 字符串)
+        let pairs: [(String, String)] = [
+            ("wrist", "thumb_cmc"), ("thumb_cmc", "thumb_mcp"), ("thumb_mcp", "thumb_ip"), ("thumb_ip", "thumb_tip"),
+            ("wrist", "index_mcp"), ("index_mcp", "index_pip"), ("index_pip", "index_dip"), ("index_dip", "index_tip"),
+            ("wrist", "middle_mcp"), ("middle_mcp", "middle_pip"), ("middle_pip", "middle_dip"), ("middle_dip", "middle_tip"),
+            ("wrist", "ring_mcp"), ("ring_mcp", "ring_pip"), ("ring_pip", "ring_dip"), ("ring_dip", "ring_tip"),
+            ("wrist", "little_mcp"), ("little_mcp", "little_pip"), ("little_pip", "little_dip"), ("little_dip", "little_tip"),
+            ("index_mcp", "middle_mcp"), ("middle_mcp", "ring_mcp"), ("ring_mcp", "little_mcp"),
         ]
-        // 清旧线 (按左右手过滤)
-        handEdges = handEdges.filter { e in anchor.children.contains(e) == false }
-        for (a,b) in pairs {
-            guard let pa = simdForJoint(joints, raw: a),
-                  let pb = simdForJoint(joints, raw: b) else { continue }
+        for (a, b) in pairs {
+            guard let pa = simdForName(byName, name: a),
+                  let pb = simdForName(byName, name: b) else { continue }
             let edge = makeLine(from: pa, to: pb, color: color, thickness: 0.004)
             anchor.addChild(edge)
             handEdges.append(edge)
         }
         anchor.isEnabled = true
     }
+
     func clearHand(isLeft: Bool) {
         let anchor = isLeft ? leftHandAnchor : rightHandAnchor
         anchor.isEnabled = false
     }
 }
 
-// MARK: - 面部网格 (468 点)
+// MARK: - 面部网格
 extension ARController {
-    func updateFace(from face: VNFaceObservation, frame: ARFrame) {
-        // Vision 返回的是屏幕空间归一化坐标 (0...1), 需要反投影到 3D
-        // 这里用简化方案: 取 face.boundingBox 的 center, 通过 ARRay 反投影到有深度的平面
-        let bb = face.boundingBox
+    func updateFace(from observation: VNFaceObservation, camera: ARCamera, sceneDepth: ARDepthData?) {
+        lastFaceConfidence = Double(observation.confidence)
+        guard let landmarks = observation.landmarks else { clearFace(); return }
+
+        // 取所有关键点 (468 个), 归一化坐标, 反投影到 3D
+        guard let allPoints = landmarks.allPoints,
+              let normalizedPoints = allPoints.normalizedPoints else { clearFace(); return }
+
+        let bb = observation.boundingBox
         let cx = (bb.minX + bb.maxX) * 0.5
         let cy = (bb.minY + bb.maxY) * 0.5
-        // VNFaceLandmarks2D 返回各区域的点数组
-        // 把所有点拼成 mesh 太复杂, 这里只画关键点 + 头部中心 3D 点
-        guard let landmarks = face.landmarks else { clearFace(); return }
-        lastFaceConfidence = face.confidence
 
-        // 用 faceObservation 的 transform 4x4 矩阵 (iOS 14+) 拿到头部 3D pose
-        if let faceTransform = face.faceTransform {
-            // faceTransform 是 4x4 matrix_float4x4, 头部中心在相机坐标系
-            let center = faceTransform.columns.3
-            let headPos = simd_float3(x: center.x, y: center.y, z: center.z)
+        // 用中心深度做头部中心 3D 定位
+        let center3D = projectToWorld(nx: cx, ny: cy, camera: camera, sceneDepth: sceneDepth)
+
+        // 头部中心球
+        if let c = center3D {
             let node = faceJoints[0] ?? makeJoint(color: .purple, radius: 0.03)
-            node.position = headPos
+            node.position = c
             if faceJoints[0] == nil { faceAnchor.addChild(node); faceJoints[0] = node }
-            faceAnchor.isEnabled = true
-        } else {
-            clearFace()
         }
+
+        // 采样部分关键点画小点 (避免 468 个球太多, 每 8 个取 1 个)
+        var sampleIdx = 1
+        for (i, pt) in normalizedPoints.enumerated() {
+            guard i % 8 == 0 else { continue }
+            let p3D = projectToWorld(nx: CGFloat(pt.x), ny: CGFloat(pt.y), camera: camera, sceneDepth: sceneDepth) ?? (center3D ?? SIMD3<Float>(0,0,0))
+            let node = faceJoints[sampleIdx] ?? makeJoint(color: .magenta, radius: 0.004)
+            node.position = p3D
+            if faceJoints[sampleIdx] == nil { faceAnchor.addChild(node); faceJoints[sampleIdx] = node }
+            sampleIdx += 1
+        }
+        faceAnchor.isEnabled = true
     }
+
+    /// 把归一化图像坐标 (0...1, 原点左下) 反投影到 AR 世界坐标
+    func projectToWorld(nx: CGFloat, ny: CGFloat, camera: ARCamera, sceneDepth: ARDepthData?) -> SIMD3<Float>? {
+        let intrinsics = camera.intrinsics
+        let resolution = camera.imageResolution
+        // 归一化 → 像素
+        let px = nx * resolution.width
+        let py = (1 - ny) * resolution.height  // Vision 坐标原点左下, 像素原点左上
+
+        // 取深度
+        var depth: Float = 1.0
+        if let depthMap = sceneDepth?.depthMap {
+            CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+            defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+            if let base = CVPixelBufferGetBaseAddress(depthMap) {
+                let w = CVPixelBufferGetWidth(depthMap)
+                let h = CVPixelBufferGetHeight(depthMap)
+                let bytesPerRow = CVPixelBufferGetBytesPerRow(depthMap)
+                let dx = min(max(Int(px / resolution.width * CGFloat(w)), 0), w - 1)
+                let dy = min(max(Int(py / resolution.height * CGFloat(h)), 0), h - 1)
+                let ptr = base.assumingMemoryBound(to: Float.self)
+                depth = ptr.advanced(by: dy * (bytesPerRow / MemoryLayout<Float>.size) + dx).pointee
+            }
+        }
+
+        // 反投影: 像素 → 相机坐标 → 世界坐标
+        let fx = intrinsics.columns.0.x
+        let fy = intrinsics.columns.1.y
+        let cx0 = intrinsics.columns.2.x
+        let cy0 = intrinsics.columns.2.y
+
+        let xCam = (Float(px) - cx0) / fx * depth
+        let yCam = (Float(py) - cy0) / fy * depth
+        let zCam = depth
+
+        let camPoint = SIMD4<Float>(xCam, yCam, zCam, 1)
+        let worldPoint = camera.transform * camPoint
+        return SIMD3<Float>(worldPoint.x, worldPoint.y, worldPoint.z)
+    }
+
     func clearFace() { faceAnchor.isEnabled = false }
     func clearAllAnchors() {
         clearBody(); clearHand(isLeft: true); clearHand(isLeft: false); clearFace()
