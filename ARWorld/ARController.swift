@@ -277,15 +277,14 @@ extension ARController {
         // 把 2D 归一化关键点反投影到 AR 世界 3D
         var worldPoints: [Int: SIMD3<Float>] = [:]
         for (name, pt) in joints {
+            guard let jointName = name as? VNHumanBodyPoseObservation.JointName else { continue }
             let p = projectToWorld(nx: pt.location.x, ny: pt.location.y, camera: camera, sceneDepth: sceneDepth)
-            if let p = p { worldPoints[name.rawValue] = p }
+            if let p = p { worldPoints[jointName.rawValue] = p }
         }
         lastBodyConfidence = Double(joints.values.compactMap { $0.confidence }.min() ?? 0)
 
         // 画关节
-        for (name, _) in joints {
-            let key = name.rawValue
-            guard let pos = worldPoints[key] else { continue }
+        for (key, pos) in worldPoints {
             let node = bodyJoints[String(key)] ?? makeJoint(color: .green, radius: 0.015)
             node.position = pos
             if bodyJoints[String(key)] == nil {
@@ -367,8 +366,9 @@ extension ARController {
 
         var worldPoints: [Int: SIMD3<Float>] = [:]
         for (name, pt) in joints {
+            guard let jointName = name as? VNHumanHandPoseObservation.JointName else { continue }
             let p = projectToWorld(nx: pt.location.x, ny: pt.location.y, camera: camera, sceneDepth: sceneDepth)
-            if let p = p { worldPoints[name.rawValue] = p }
+            if let p = p { worldPoints[jointName.rawValue] = p }
         }
 
         let anchor = isLeft ? leftHandAnchor : rightHandAnchor
@@ -376,13 +376,12 @@ extension ARController {
         let color: UIColor = isLeft ? .orange : .systemPink
 
         // 画关节
-        for (name, _) in joints {
-            let key = keyPrefix + name.rawValue
-            guard let pos = worldPoints[name.rawValue] else { continue }
-            let node = handJoints[key] ?? makeJoint(color: color, radius: 0.008)
+        for (key, pos) in worldPoints {
+            let k = keyPrefix + key
+            let node = handJoints[k] ?? makeJoint(color: color, radius: 0.008)
             node.position = pos
-            if handJoints[key] == nil {
-                anchor.addChild(node); handJoints[key] = node
+            if handJoints[k] == nil {
+                anchor.addChild(node); handJoints[k] = node
             }
         }
 
