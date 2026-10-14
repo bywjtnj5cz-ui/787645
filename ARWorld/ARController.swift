@@ -326,14 +326,23 @@ extension ARController {
         clearBody(); clearHand(isLeft: true); clearHand(isLeft: false); clearFace()
     }
 
-    /// 归一化图像坐标 (原点左下) → AR 世界坐标
+    /// Vision 归一化坐标 (原点左下) → AR 世界坐标
+    ///
+    /// 关键点:
+    /// - Vision 以 `.right` 运行 => 输出是"竖屏"归一化坐标; 而 camera.intrinsics /
+    ///   imageResolution 是"原生横屏"坐标系。竖屏 = 原生图像顺时针旋转 90°,
+    ///   所以反推回原生像素坐标: nativeX = (1-ny)*W, nativeY = (1-nx)*H。
+    /// - ARKit 相机空间为 +X 右 / +Y 上 / -Z 前方, 深度必须取负 z。
     func projectToWorld(nx: CGFloat, ny: CGFloat, camera: ARCamera, sceneDepth: ARDepthData?) -> SIMD3<Float>? {
         let intrinsics = camera.intrinsics
-        let resolution = camera.imageResolution
-        let px = Float(nx) * Float(resolution.width)
-        let py = Float(1.0 - ny) * Float(resolution.height)
+        let resolution = camera.imageResolution   // 原生横屏: width 长边, height 短边
 
-        var depth: Float = 1.0
+        // 竖屏归一化 → 原生(横屏)像素坐标
+        let px = Float(1.0 - ny) * Float(resolution.width)
+        let py = Float(1.0 - nx) * Float(resolution.height)
+
+        // 深度: 有 LiDAR 用真实深度, 否则回退 1.5m, 保证无 LiDAR 设备也能看到骨骼
+        var depth: Float = 1.5
         if let depthMap = sceneDepth?.depthMap {
             CVPixelBufferLockBaseAddress(depthMap, .readOnly)
             defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
@@ -344,19 +353,22 @@ extension ARController {
                 let dx = min(max(Int(px / Float(resolution.width) * Float(w)), 0), w - 1)
                 let dy = min(max(Int(py / Float(resolution.height) * Float(h)), 0), h - 1)
                 let ptr = base.assumingMemoryBound(to: Float.self)
-                depth = ptr.advanced(by: dy * (bytesPerRow / MemoryLayout<Float>.size) + dx).pointee
+                let d = ptr.advanced(by: dy * (bytesPerRow / MemoryLayout<Float>.size) + dx).pointee
+                if d > 0 && d.isFinite { depth = d }
             }
         }
-        if depth <= 0 || !depth.isFinite { return nil }
 
         let fx = intrinsics.columns.0.x
         let fy = intrinsics.columns.1.y
         let cx0 = intrinsics.columns.2.x
         let cy0 = intrinsics.columns.2.y
-        let xCam = (px - cx0) / fx * depth
-        let yCam = (py - cy0) / fy * depth
 
-        let camPoint = SIMD4<Float>(xCam, yCam, depth, 1.0)
+        // 相机空间: +X 右, +Y 上, -Z 前方 (图像 y 向下, 故 Y 取反)
+        let xCam = (px - cx0) / fx * depth
+        let yCam = (cy0 - py) / fy * depth
+        let zCam = -depth
+
+        let camPoint = SIMD4<Float>(xCam, yCam, zCam, 1.0)
         let world = camera.transform * camPoint
         return SIMD3<Float>(world.x, world.y, world.z)
     }
