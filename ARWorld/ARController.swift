@@ -271,7 +271,14 @@ extension ARController {
 // MARK: - 身体骨骼 (Vision 2D 关键点 + 深度反投影到 3D)
 extension ARController {
     func updateBody(from observation: VNHumanBodyPoseObservation, camera: ARCamera, sceneDepth: ARDepthData?) {
-        guard let joints = try? observation.recognizedPoints(VNHumanBodyPoseObservation.JointName.allCases) else { clearBody(); return }
+        let allJoints: [VNHumanBodyPoseObservation.JointName] = [
+            .nose, .leftEye, .rightEye, .leftEar, .rightEar,
+            .neck, .leftShoulder, .rightShoulder,
+            .leftElbow, .rightElbow, .leftWrist, .rightWrist,
+            .leftHip, .rightHip, .leftKnee, .rightKnee,
+            .leftAnkle, .rightAnkle
+        ]
+        guard let joints = try? observation.recognizedPoints(allJoints) else { clearBody(); return }
         guard !joints.isEmpty else { clearBody(); return }
 
         // 把 2D 归一化关键点反投影到 AR 世界 3D
@@ -362,7 +369,14 @@ extension ARController {
 // MARK: - 手部 (21 点 / 手, Vision 2D + 深度反投影)
 extension ARController {
     func updateHand(from observation: VNHumanHandPoseObservation, isLeft: Bool, camera: ARCamera, sceneDepth: ARDepthData?) {
-        guard let joints = try? observation.recognizedPoints(VNHumanHandPoseObservation.JointName.allCases) else { clearHand(isLeft: isLeft); return }
+        let allJoints: [VNHumanHandPoseObservation.JointName] = [
+            .wrist, .thumbCMC, .thumbMP, .thumbIP, .thumbTip,
+            .indexMCP, .indexPIP, .indexDIP, .indexTip,
+            .middleMCP, .middlePIP, .middleDIP, .middleTip,
+            .ringMCP, .ringPIP, .ringDIP, .ringTip,
+            .littleMCP, .littlePIP, .littleDIP, .littleTip
+        ]
+        guard let joints = try? observation.recognizedPoints(allJoints) else { clearHand(isLeft: isLeft); return }
         guard !joints.isEmpty else { clearHand(isLeft: isLeft); return }
 
         var worldPoints: [Int: SIMD3<Float>] = [:]
